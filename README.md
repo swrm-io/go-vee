@@ -15,7 +15,7 @@ Go-Vee is a Go library for controlling Govee smart devices over the local networ
 Add Go-Vee to your project:
 
 ```sh
-go get github.com/Khabi/go-vee
+go get github.com/swrm-io/go-vee
 ```
 
 ## Usage
@@ -24,7 +24,7 @@ go get github.com/Khabi/go-vee
 ```go
 import (
     "log/slog"
-    "github.com/Khabi/go-vee"
+    "github.com/swrm-io/go-vee"
 )
 
 logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

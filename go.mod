@@ -1,4 +1,4 @@
-module github.com/Khabi/go-vee
+module github.com/swrm-io/go-vee
 
 go 1.24.1
 
