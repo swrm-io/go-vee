@@ -6,28 +6,33 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 )
 
+// Controller manages Govee devices and communication over the network.
 type Controller struct {
 	logger  *slog.Logger
 	devices []*Device
 	ctx     context.Context
+	cancel  context.CancelFunc
 	command chan Message
+	wg      sync.WaitGroup
 }
 
+// NewController creates a new Controller with the provided logger.
 func NewController(logger *slog.Logger) *Controller {
-
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Controller{
 		devices: []*Device{},
 		logger:  logger,
-		ctx:     context.Background(),
+		ctx:     ctx,
+		cancel:  cancel,
 		command: make(chan Message),
 	}
 }
 
-// Start initializes the controller, begins listening for device messages,
-// and starts periodic scanning for devices (every 60 seconds).
+// Start initializes the controller, begins listening for device messages, and starts periodic scanning for devices (every 60 seconds). Returns an error if the network cannot be initialized.
 func (c *Controller) Start() error {
 	c.logger.Info("Starting Govee Controller")
 	addr, err := net.ResolveUDPAddr("udp4", "239.255.255.250:4002")
@@ -41,21 +46,33 @@ func (c *Controller) Start() error {
 		c.logger.Error("Failed to listen on multicast UDP", "error", err)
 		return err
 	}
-	defer conn.Close()
+	// Don't defer conn.Close() here, close in Shutdown
 
 	conn.SetReadBuffer(8192)
 
-	// ToDo: make this a waitgroup and have a shutdown function
+	// Main UDP listener goroutine
+	c.logger.Debug("WG Add: UDP listener goroutine")
+	c.wg.Add(1)
 	go func() {
+		c.logger.Debug("UDP listener goroutine started")
+		defer func() {
+			c.logger.Debug("UDP listener goroutine exiting, calling WG Done")
+			c.wg.Done()
+		}()
 		for {
 			select {
 			case <-c.ctx.Done():
 				return
-
 			default:
+				// Set a short read deadline so we can check ctx.Done() regularly
+				_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 				buffer := make([]byte, 8192)
 				n, src, err := conn.ReadFromUDP(buffer)
 				if err != nil {
+					// If timeout, just continue to check ctx.Done()
+					if ne, ok := err.(net.Error); ok && ne.Timeout() {
+						continue
+					}
 					c.logger.Error("Error reading from UDP", "error", err)
 					continue
 				}
@@ -119,12 +136,18 @@ func (c *Controller) Start() error {
 		}
 	}()
 
+	c.logger.Debug("WG Add: command sender goroutine")
+	c.wg.Add(1)
 	go func() {
+		c.logger.Debug("command sender goroutine started")
+		defer func() {
+			c.logger.Debug("command sender goroutine exiting, calling WG Done")
+			c.wg.Done()
+		}()
 		for cmd := range c.command {
 			data, err := json.Marshal(cmd.Payload)
 			if err != nil {
 				c.logger.Error("Failed to marshal command", "error", err)
-				conn.Close()
 				continue
 			}
 
@@ -138,35 +161,40 @@ func (c *Controller) Start() error {
 			addr, err := net.ResolveUDPAddr("udp4", target)
 			if err != nil {
 				c.logger.Error("Failed to resolve device address", "error", err)
-				conn.Close()
 				continue
 			}
 
-			conn, err := net.DialUDP("udp4", nil, addr)
+			deviceConn, err := net.DialUDP("udp4", nil, addr)
 			if err != nil {
 				c.logger.Error("Failed to dial device address", "error", err)
-				conn.Close()
 				continue
 			}
 
-			_, err = conn.Write(data)
+			_, err = deviceConn.Write(data)
 			if err != nil {
 				c.logger.Error("Failed to send command", "error", err)
-				conn.Close()
+				deviceConn.Close()
 				continue
 			}
 
-			conn.Close()
+			deviceConn.Close()
 		}
 	}()
 
-	go func() error {
+	c.logger.Debug("WG Add: periodic scan goroutine")
+	c.wg.Add(1)
+	go func() {
+		c.logger.Debug("periodic scan goroutine started")
+		defer func() {
+			c.logger.Debug("periodic scan goroutine exiting, calling WG Done")
+			c.wg.Done()
+		}()
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		scan, err := newAPIRequest("scan", scanRequest{AccountTopic: "reserve"})
 		if err != nil {
 			c.logger.Error("Failed to create scan request", "error", err)
-			return err
+			return
 		}
 		msg := Message{"239.255.255.250", scan}
 
@@ -176,7 +204,7 @@ func (c *Controller) Start() error {
 		for {
 			select {
 			case <-c.ctx.Done():
-				return nil
+				return
 			case <-ticker.C:
 				c.logger.Debug("Sending periodic scan request")
 				c.command <- msg
@@ -185,13 +213,23 @@ func (c *Controller) Start() error {
 	}()
 
 	<-c.ctx.Done()
+	// Wait for all goroutines to finish
+	c.logger.Debug("WG Wait: waiting for all goroutines to finish")
+	conn.Close()
+	close(c.command)
+	c.wg.Wait()
+	c.logger.Debug("WG Wait: all goroutines finished")
 	return nil
 }
 
-// Shutdown gracefully shuts down the controller.
+// Shutdown gracefully shuts down the controller and all goroutines. Blocks until all background tasks have exited.
 func (c *Controller) Shutdown() error {
 	c.logger.Info("Shutting down Govee Controller")
-	c.ctx.Done()
+	c.cancel()
+	c.logger.Debug("Shutdown: waiting for WaitGroup")
+	// c.command will be closed by Start after context is canceled
+	c.wg.Wait()
+	c.logger.Debug("Shutdown: WaitGroup finished")
 	return nil
 }
 
@@ -200,7 +238,7 @@ func (c *Controller) Devices() []*Device {
 	return c.devices
 }
 
-// DeviceByIP returns a pointer to a device by its IP address, or nil if not found.
+// DeviceByIP returns a pointer to a device by its IP address, or an error if not found.
 func (c *Controller) DeviceByIP(ip string) (*Device, error) {
 	for _, device := range c.devices {
 		if device.ip == ip {
@@ -210,7 +248,7 @@ func (c *Controller) DeviceByIP(ip string) (*Device, error) {
 	return nil, ErrNoDeviceFound
 }
 
-// DeviceByID returns a pointer to a device by its DeviceID, or nil if not found.
+// DeviceByID returns a pointer to a device by its DeviceID, or an error if not found.
 func (c *Controller) DeviceByID(id string) (*Device, error) {
 	for _, device := range c.devices {
 		if device.deviceID == id {
