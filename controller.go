@@ -86,11 +86,12 @@ func (c *Controller) Start() error {
 
 					deviceLogger := c.logger.With("device_ip", srcAddr)
 					newDevice := Device{
-						ip:       srcAddr,
-						logger:   deviceLogger,
-						ctx:      c.ctx,
-						command:  c.command,
-						response: make(chan Message),
+						ip:           srcAddr,
+						logger:       deviceLogger,
+						ctx:          c.ctx,
+						command:      c.command,
+						response:     make(chan Message),
+						statusUpdate: make(chan time.Time, 1),
 					}
 					go newDevice.handler()
 					c.devices = append(c.devices, &newDevice)

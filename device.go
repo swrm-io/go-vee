@@ -25,10 +25,11 @@ type Device struct {
 	color       Color
 	colorKelvin ColorKelvin
 
-	logger   *slog.Logger
-	ctx      context.Context
-	command  chan Message
-	response chan Message
+	logger       *slog.Logger
+	ctx          context.Context
+	command      chan Message
+	response     chan Message
+	statusUpdate chan time.Time
 }
 
 // handler listens for device responses and updates device state. Exits when ctx is canceled.
@@ -62,6 +63,10 @@ func (d *Device) handler() {
 				d.color = payload.Color
 				d.colorKelvin = payload.ColorKelvin
 				d.seen = time.Now()
+				select {
+				case d.statusUpdate <- time.Now():
+				default:
+				}
 			default:
 				d.logger.Warn("Unknown command type", "type", fmt.Sprintf("%T", resp))
 			}
@@ -207,5 +212,32 @@ func (d *Device) SetColorKelvin(colorKelvin ColorKelvin) error {
 		return nil
 	default:
 		return fmt.Errorf("failed to send SetColorKelvin command: channel blocked or closed")
+	}
+}
+
+// RequestStatus requests the current status of the device and blocks until a response is received or times out after 5 seconds. Returns an error if the command cannot be sent or if the response times out.
+func (d *Device) RequestStatus() error {
+	d.logger.Debug("Requesting device status")
+	cmd := devStatusRequest{}
+	wrapper, err := newAPIRequest("devStatus", cmd)
+	if err != nil {
+		return err
+	}
+	select {
+	case d.command <- Message{IP: d.ip, Payload: wrapper}:
+	case <-d.ctx.Done():
+		return fmt.Errorf("context canceled while sending RequestStatus command")
+	default:
+		return fmt.Errorf("failed to send RequestStatus command: channel blocked or closed")
+	}
+	// Wait for status update
+	select {
+	case <-d.statusUpdate:
+		d.logger.Debug("Received status response")
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout waiting for device status response")
+	case <-d.ctx.Done():
+		return fmt.Errorf("context canceled while waiting for status response")
 	}
 }

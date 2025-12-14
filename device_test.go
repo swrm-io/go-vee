@@ -66,3 +66,14 @@ func ExampleDevice_SetColorKelvin() {
 		_ = device.SetColorKelvin(k)
 	}
 }
+
+func ExampleDevice_RequestStatus() {
+	controller := NewController(nil)
+	go controller.Start()
+	defer controller.Shutdown()
+
+	device, _ := controller.DeviceByIP("192.168.1.100")
+	if device != nil {
+		_ = device.RequestStatus()
+	}
+}
