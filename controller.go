@@ -48,7 +48,11 @@ func (c *Controller) Start() error {
 	}
 	// Don't defer conn.Close() here, close in Shutdown
 
-	conn.SetReadBuffer(8192)
+	err = conn.SetReadBuffer(8192)
+	if err != nil {
+		c.logger.Error("Failed to set UDP read buffer", "error", err)
+		return err
+	}
 
 	// Main UDP listener goroutine
 	c.logger.Debug("WG Add: UDP listener goroutine")
