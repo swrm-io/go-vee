@@ -5,7 +5,9 @@ func ExampleDevice_TurnOn() {
 	go controller.Start()
 	defer controller.Shutdown()
 	device, _ := controller.DeviceByIP("192.168.1.100")
-	device.TurnOn()
+	if device != nil {
+		_ = device.TurnOn()
+	}
 }
 func ExampleDevice_TurnOff() {
 	controller := NewController(nil)
@@ -13,7 +15,9 @@ func ExampleDevice_TurnOff() {
 	defer controller.Shutdown()
 
 	device, _ := controller.DeviceByIP("192.168.1.100")
-	device.TurnOff()
+	if device != nil {
+		_ = device.TurnOff()
+	}
 }
 
 func ExampleDevice_Toggle() {
@@ -22,7 +26,9 @@ func ExampleDevice_Toggle() {
 	defer controller.Shutdown()
 
 	device, _ := controller.DeviceByIP("192.168.1.100")
-	device.Toggle()
+	if device != nil {
+		_ = device.Toggle()
+	}
 }
 
 func ExampleDevice_SetBrightness() {
@@ -32,7 +38,9 @@ func ExampleDevice_SetBrightness() {
 
 	device, _ := controller.DeviceByIP("192.168.1.100")
 	brightness := NewBrightness(75)
-	device.SetBrightness(brightness)
+	if device != nil {
+		_ = device.SetBrightness(brightness)
+	}
 }
 
 func ExampleDevice_SetColor() {
@@ -42,7 +50,9 @@ func ExampleDevice_SetColor() {
 
 	device, _ := controller.DeviceByIP("192.168.1.100")
 	color := NewColor(255, 0, 0)
-	device.SetColor(color)
+	if device != nil {
+		_ = device.SetColor(color)
+	}
 }
 
 func ExampleDevice_SetColorKelvin() {
@@ -52,5 +62,18 @@ func ExampleDevice_SetColorKelvin() {
 
 	device, _ := controller.DeviceByIP("192.168.1.100")
 	k := NewColorKelvin(3500)
-	device.SetColorKelvin(k)
+	if device != nil {
+		_ = device.SetColorKelvin(k)
+	}
+}
+
+func ExampleDevice_RequestStatus() {
+	controller := NewController(nil)
+	go controller.Start()
+	defer controller.Shutdown()
+
+	device, _ := controller.DeviceByIP("192.168.1.100")
+	if device != nil {
+		_ = device.RequestStatus()
+	}
 }

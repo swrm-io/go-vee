@@ -7,6 +7,7 @@ import (
 	"strconv"
 )
 
+// Message represents a message sent to or from a device.
 type Message struct {
 	IP      string
 	Payload any
@@ -127,6 +128,7 @@ func (c Color) String() string {
 	return fmt.Sprintf("rgb(%d, %d, %d)", c.R, c.G, c.B)
 }
 
+// ColorKelvin represents a color temperature in Kelvin.
 type ColorKelvin uint
 
 // NewColorKelvin creates a new ColorKelvin value
