@@ -203,7 +203,7 @@ func (d *Device) SetColor(color Color) error {
 func (d *Device) SetColorKelvin(colorKelvin ColorKelvin) error {
 	d.logger.Debug("Setting color temperature", "colorKelvin", colorKelvin)
 	cmd := colorRequest{Color: Color{}, Kelvin: colorKelvin}
-	wrapper, err := newAPIRequest("colorKelvin", cmd)
+	wrapper, err := newAPIRequest("colorwc", cmd)
 	if err != nil {
 		return err
 	}
